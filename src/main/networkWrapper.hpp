@@ -3,26 +3,15 @@
 
 //-----------------------------------------------------------------------------
 
-#include <boost/asio.hpp>
-#include <boost/date_time/posix_time/posix_time.hpp>
-#include <boost/enable_shared_from_this.hpp>
-#include <boost/shared_ptr.hpp>
 #include <string>
 #include <vector>
 #include <list>
-#include <boost/cstdint.hpp>
-
-//-----------------------------------------------------------------------------
-
-using boost::uint64_t;
-using boost::uint32_t;
-using boost::uint16_t;
-using boost::uint8_t;
-
-using boost::int64_t;
-using boost::int32_t;
-using boost::int16_t;
-using boost::int8_t;
+#include <cstdint>
+#include <functional>
+#include <asio/ip/tcp.hpp>
+#include <asio/strand.hpp>
+#include <asio/basic_waitable_timer.hpp>
+#include <chrono>
 
 //-----------------------------------------------------------------------------
 
@@ -32,26 +21,26 @@ class Connection;
 
 //-----------------------------------------------------------------------------
 
-class Connection : public boost::enable_shared_from_this< Connection >
+class Connection : public std::enable_shared_from_this< Connection >
 {
 	friend class Acceptor;
 	friend class Hive;
 
 private:
-	boost::shared_ptr< Hive > m_hive;
-	boost::asio::ip::tcp::socket m_socket;
-	boost::asio::strand m_io_strand;
-	boost::asio::deadline_timer m_timer;
-	boost::posix_time::ptime m_last_time;
+	std::shared_ptr< Hive > m_hive;
+	asio::ip::tcp::socket m_socket;
+	asio::strand m_io_strand;
+	asio::basic_waitable_timer<std::chrono::high_resolution_clock> m_timer;
+	std::chrono::time_point<std::chrono::high_resolution_clock> m_last_time;
 	std::vector< uint8_t > m_recv_buffer;
 	std::list< int32_t > m_pending_recvs;
 	std::list< std::vector< uint8_t > > m_pending_sends;
 	int32_t m_receive_buffer_size;
 	int32_t m_timer_interval;
-	volatile uint32_t m_error_state;
+	volatile std::atomic<bool> m_error_state;
 
 protected:
-	Connection( boost::shared_ptr< Hive > hive );
+	Connection( std::shared_ptr< Hive > hive );
 	virtual ~Connection();
 
 private:
@@ -60,16 +49,16 @@ private:
 	void StartSend();
 	void StartRecv( int32_t total_bytes );
 	void StartTimer();
-	void StartError( const boost::system::error_code & error );
+	void StartError( const asio::error_code & error );
 	void DispatchSend( std::vector< uint8_t > buffer );
 	void DispatchRecv( int32_t total_bytes );
-	void DispatchTimer( const boost::system::error_code & error );
-	void HandleConnect( const boost::system::error_code & error );
-	void HandleSend( const boost::system::error_code & error,
+	void DispatchTimer( const asio::error_code & error );
+	void HandleConnect( const asio::error_code & error );
+	void HandleSend( const asio::error_code & error,
 		std::list< std::vector< uint8_t > >::iterator itr );
-	void HandleRecv( const boost::system::error_code & error,
+	void HandleRecv( const asio::error_code & error,
 		int32_t actual_bytes );
-	void HandleTimer( const boost::system::error_code & error );
+	void HandleTimer( const asio::error_code & error );
 
 private:
 	// Called when the connection has successfully connected to the local
@@ -87,23 +76,23 @@ private:
 	virtual void OnRecv( std::vector< uint8_t > & buffer ) = 0;
 
 	// Called on each timer event.
-	virtual void OnTimer( const boost::posix_time::time_duration & delta ) = 0;
+	virtual void OnTimer( const std::chrono::milliseconds & delta ) = 0;
 
 	// Called when an error is encountered.
-	virtual void OnError( const boost::system::error_code & error ) = 0;
+	virtual void OnError( const asio::error_code & error ) = 0;
 
 public:
 	// copy the object
-	virtual boost::shared_ptr<Connection> NewConnection() = 0;
+	virtual std::shared_ptr<Connection> NewConnection() = 0;
 
 	// Returns the Hive object.
-	boost::shared_ptr< Hive > GetHive();
+	std::shared_ptr< Hive > GetHive();
 
 	// Returns the socket object.
-	boost::asio::ip::tcp::socket & GetSocket();
+	asio::ip::tcp::socket & GetSocket();
 
 	// Returns the strand object.
-	boost::asio::strand & GetStrand();
+	asio::strand & GetStrand();
 
 	// Sets the application specific receive buffer size used. For stream
 	// based protocols such as HTTP, you want this to be pretty large, like
@@ -146,31 +135,31 @@ public:
 
 //-----------------------------------------------------------------------------
 
-class Acceptor : public boost::enable_shared_from_this< Acceptor >
+class Acceptor : public std::enable_shared_from_this< Acceptor >
 {
 	friend class Hive;
 
 private:
-	boost::shared_ptr< Hive > m_hive;
-	boost::asio::ip::tcp::acceptor m_acceptor;
-	boost::asio::strand m_io_strand;
-	boost::asio::deadline_timer m_timer;
-	boost::posix_time::ptime m_last_time;
+	std::shared_ptr< Hive > m_hive;
+	asio::ip::tcp::acceptor m_acceptor;
+	asio::strand m_io_strand;
+	asio::basic_waitable_timer<std::chrono::high_resolution_clock> m_timer;
+	std::chrono::time_point<std::chrono::high_resolution_clock> m_last_time;
 	int32_t m_timer_interval;
-	volatile uint32_t m_error_state;
+	volatile std::atomic<bool> m_error_state;
 
 private:
 	Acceptor( const Acceptor & rhs );
 	Acceptor & operator =( const Acceptor & rhs );
 	void StartTimer();
-	void StartError( const boost::system::error_code & error );
-	void DispatchAccept( boost::shared_ptr< Connection > connection );
-	void HandleTimer( const boost::system::error_code & error );
-	void HandleAccept( const boost::system::error_code & error,
-		boost::shared_ptr< Connection > connection );
+	void StartError( const asio::error_code & error );
+	void DispatchAccept( std::shared_ptr< Connection > connection );
+	void HandleTimer( const asio::error_code & error );
+	void HandleAccept( const asio::error_code & error,
+		std::shared_ptr< Connection > connection );
 
 protected:
-	Acceptor( boost::shared_ptr< Hive > hive );
+	Acceptor( std::shared_ptr< Hive > hive );
 	virtual ~Acceptor();
 
 private:
@@ -179,26 +168,26 @@ private:
 	// connection will be kept. If the connection will not be kept, the
 	// connection's Disconnect function should be called and the function
 	// should return false.
-	virtual bool OnAccept( boost::shared_ptr< Connection > connection,
+	virtual bool OnAccept( std::shared_ptr< Connection > connection,
 		const std::string & host, uint16_t port ) = 0;
 
 	// Called on each timer event.
-	virtual void OnTimer( const boost::posix_time::time_duration & delta ) = 0;
+	virtual void OnTimer( const std::chrono::milliseconds & delta ) = 0;
 
 	// Called when an error is encountered. Most typically, this is when the
 	// acceptor is being closed via the Stop function or if the Listen is
 	// called on an address that is not available.
-	virtual void OnError( const boost::system::error_code & error ) = 0;
+	virtual void OnError( const asio::error_code & error ) = 0;
 
 public:
 	// Returns the Hive object.
-	boost::shared_ptr< Hive > GetHive();
+	std::shared_ptr< Hive > GetHive();
 
 	// Returns the acceptor object.
-	boost::asio::ip::tcp::acceptor & GetAcceptor();
+	asio::ip::tcp::acceptor & GetAcceptor();
 
 	// Returns the strand object.
-	boost::asio::strand & GetStrand();
+	asio::strand & GetStrand();
 
 	// Sets the timer interval of the object. The interval is changed after
 	// the next update is called. The default value is 1000 ms.
@@ -217,7 +206,7 @@ public:
 	// Posts the connection to the listening interface. The next client that
 	// connections will be given this connection. If multiple calls to Accept
 	// are called at a time, then they are accepted in a FIFO order.
-	void Accept( boost::shared_ptr< Connection > connection );
+	void Accept( std::shared_ptr< Connection > connection );
 
 	// Stop the Acceptor from listening.
 	void Stop();
@@ -225,12 +214,12 @@ public:
 
 //-----------------------------------------------------------------------------
 
-class Hive : public boost::enable_shared_from_this< Hive >
+class Hive : public std::enable_shared_from_this< Hive >
 {
 private:
-	boost::asio::io_service m_io_service;
-	boost::shared_ptr< boost::asio::io_service::work > m_work_ptr;
-	volatile uint32_t m_shutdown;
+	asio::io_service m_io_service;
+	std::shared_ptr< asio::io_service::work > m_work_ptr;
+	volatile std::atomic<bool> m_shutdown;
 
 private:
 	Hive( const Hive & rhs );
@@ -241,7 +230,7 @@ public:
 	virtual ~Hive();
 
 	// Returns the io_service of this object.
-	boost::asio::io_service & GetService();
+	asio::io_service & GetService();
 
 	// Returns true if the Stop function has been called.
 	bool HasStopped();

@@ -31,12 +31,12 @@ public:
 	BallClient();
 
 	void processUpdate(bouncingBall::BallUpdate bu,
-		boost::shared_ptr<BallConnection> connection);
+		std::shared_ptr<BallConnection> connection);
 
 	void printBalls();
 
 	void init(const std::string id,
-		boost::shared_ptr<BallConnection> connection);
+		std::shared_ptr<BallConnection> connection);
 
 	bool isInit() const;
 
@@ -46,7 +46,7 @@ public:
 	// void delBall(const std::string id);
 
 private:
-	boost::shared_ptr<BallConnection> connection;
+	std::shared_ptr<BallConnection> connection;
 
 	bool isInit_;
 	std::string id;
@@ -59,7 +59,7 @@ private:
 class BallConnection : public Connection
 {
 private:
-	boost::shared_ptr<BallClient> ballClnt;
+	std::shared_ptr<BallClient> ballClnt;
 
 	void OnAccept( const std::string & host, uint16_t port );
 
@@ -69,17 +69,17 @@ private:
 
 	void OnRecv( std::vector< uint8_t > & buffer );
 
-	void OnTimer( const boost::posix_time::time_duration & delta );
+	void OnTimer( const std::chrono::milliseconds & delta );
 
-	void OnError( const boost::system::error_code & error );
+	void OnError( const asio::error_code & error );
 
 public:
-	BallConnection( boost::shared_ptr<BallClient> ballClnt,
-		boost::shared_ptr< Hive > hive );
+	BallConnection( std::shared_ptr<BallClient> ballClnt,
+		std::shared_ptr< Hive > hive );
 
 	~BallConnection();
 
-	boost::shared_ptr<Connection> NewConnection();
+	std::shared_ptr<Connection> NewConnection();
 
 	void SendUpdate(const bouncingBall::BallUpdate & bu);
 };

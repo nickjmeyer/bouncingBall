@@ -4,6 +4,7 @@
 #include "networkWrapper.hpp"
 #include "ball.pb.h"
 #include <queue>
+#include <asio/error.hpp>
 
 
 // random identifier
@@ -16,22 +17,22 @@ class BallAcceptor;
 class BallServer {
 public:
 	void process(const bouncingBall::BallUpdate & bu,
-		boost::shared_ptr<BallConnection> connection);
+		std::shared_ptr<BallConnection> connection);
 
 // private:
 public:
 	// connection containers
-	std::map<boost::shared_ptr<BallConnection>,
+	std::map<std::shared_ptr<BallConnection>,
 					 std::string> connToId;
 	std::map<std::string,
-					 boost::shared_ptr<BallConnection> > idToConn;
+					 std::shared_ptr<BallConnection> > idToConn;
 };
 
 
 class BallConnection : public Connection
 {
 private:
-	boost::shared_ptr<BallServer> ballSrv;
+	std::shared_ptr<BallServer> ballSrv;
 
 	void OnAccept( const std::string & host, uint16_t port );
 
@@ -41,18 +42,18 @@ private:
 
 	void OnRecv( std::vector< uint8_t > & buffer );
 
-	void OnTimer( const boost::posix_time::time_duration & delta );
+	void OnTimer( const std::chrono::milliseconds & delta );
 
-	void OnError( const boost::system::error_code & error );
+	void OnError( const asio::error_code & error );
 
 public:
-	BallConnection( boost::shared_ptr<BallServer> ballSrv,
-		boost::shared_ptr< Hive > hive );
+	BallConnection( std::shared_ptr<BallServer> ballSrv,
+		std::shared_ptr< Hive > hive );
 
 
 	~BallConnection();
 
-	boost::shared_ptr<Connection> NewConnection();
+	std::shared_ptr<Connection> NewConnection();
 
 	void SendUpdate(const bouncingBall::BallUpdate & letter);
 };
@@ -60,18 +61,18 @@ public:
 class BallAcceptor : public Acceptor
 {
 private:
-	boost::shared_ptr<BallServer> ballSrv;
+	std::shared_ptr<BallServer> ballSrv;
 
-	bool OnAccept( boost::shared_ptr< Connection > connection,
+	bool OnAccept( std::shared_ptr< Connection > connection,
 		const std::string & host, uint16_t port );
 
-	void OnTimer( const boost::posix_time::time_duration & delta );
+	void OnTimer( const std::chrono::milliseconds & delta );
 
-	void OnError( const boost::system::error_code & error );
+	void OnError( const asio::error_code & error );
 
 public:
-	BallAcceptor( boost::shared_ptr<BallServer> ballSrv,
-		boost::shared_ptr< Hive > hive );
+	BallAcceptor( std::shared_ptr<BallServer> ballSrv,
+		std::shared_ptr< Hive > hive );
 
 	~BallAcceptor();
 };

@@ -1,18 +1,15 @@
 #include "ballServer.hpp"
 #include <unistd.h>
 #include <iostream>
-#include <boost/date_time/posix_time/posix_time.hpp>
-#include <boost/thread/thread.hpp>
-#include <boost/thread/mutex.hpp>
-#include <boost/lexical_cast.hpp>
-#include <boost/random.hpp>
-#include <boost/generator_iterator.hpp>
+#include <random>
+#include <mutex>
 #include <queue>
+#include <thread>
 
-boost::mutex global_stream_lock;
-boost::mutex global_rng_lock;
+std::mutex global_stream_lock;
+std::mutex global_rng_lock;
 
-void WorkerThread( boost::shared_ptr< Hive > hive)
+void WorkerThread( std::shared_ptr< Hive > hive)
 {
 	global_stream_lock.lock();
 	std::cout << "thread started" << std::endl;
@@ -33,20 +30,19 @@ std::string genIdentifier() {
 		"abcdefghijklmnopqrstuvwxyz"
 		"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 	static const unsigned int idLen = 32;
-	static boost::variate_generator<boost::mt19937,
-																	boost::uniform_int<> >
-		pick(boost::mt19937(),boost::uniform_int<>(0,alphanums.length()-1));
+	static std::mt19937 gen;
+	static std::uniform_int_distribution<int> pick(0,alphanums.length()-1);
 	global_rng_lock.lock();
 	std::string id;
 	for (unsigned int i = 0; i < idLen; i++) {
-    id += alphanums[pick()];
+    id += alphanums[pick(gen)];
 	}
 	global_rng_lock.unlock();
 	return id;
 }
 
 void BallServer::process(const bouncingBall::BallUpdate & bu,
-	boost::shared_ptr<BallConnection> connection) {
+	std::shared_ptr<BallConnection> connection) {
 
 	global_stream_lock.lock();
 	std::cout << "[" << __FUNCTION__ << "]" << std::endl;
@@ -68,7 +64,7 @@ void BallServer::process(const bouncingBall::BallUpdate & bu,
 		bouncingBall::BallUpdate buNewBall;
 		buNewBall.set_type(bouncingBall::BallUpdate_Type_NEWBALL);
 
-		std::map<boost::shared_ptr<BallConnection>,std::string>
+		std::map<std::shared_ptr<BallConnection>,std::string>
 			::const_iterator
 			it,end;
 		end = connToId.end();
@@ -87,7 +83,7 @@ void BallServer::process(const bouncingBall::BallUpdate & bu,
 		idToConn[id] = connection;
 
 	}	else if(bu.type() == bouncingBall::BallUpdate_Type_BOUNCEBALL) {
-		std::map<boost::shared_ptr<BallConnection>,std::string >
+		std::map<std::shared_ptr<BallConnection>,std::string >
 			::const_iterator
 			it,end;
 		end = connToId.end();
@@ -104,7 +100,7 @@ void BallServer::process(const bouncingBall::BallUpdate & bu,
 		bu.set_type(bouncingBall::BallUpdate_Type_DELBALL);
 		bu.set_id(id);
 
-		std::map<boost::shared_ptr<BallConnection>,std::string>
+		std::map<std::shared_ptr<BallConnection>,std::string>
 			::const_iterator
 			it,end;
 		end = connToId.end();
@@ -190,39 +186,39 @@ void BallConnection::OnRecv( std::vector< uint8_t > & buffer )
 	bu.ParseFromString(std::string(buffer.begin(),buffer.end()));
 	if(bu.has_type()) {
 		ballSrv->process(bu,
-			boost::dynamic_pointer_cast<BallConnection>(shared_from_this()));
+			std::dynamic_pointer_cast<BallConnection>(shared_from_this()));
 	}
 
 	// Start the next receive
 	Recv();
 }
 
-void BallConnection::OnTimer( const boost::posix_time::time_duration & delta )
+void BallConnection::OnTimer( const std::chrono::milliseconds & delta )
 {
 	// global_stream_lock.lock();
 	// std::cout << "[" << __PRETTY_FUNCTION__ << "] " << delta << std::endl;
 	// global_stream_lock.unlock();
 }
 
-void BallConnection::OnError( const boost::system::error_code & error )
+void BallConnection::OnError( const asio::error_code & error )
 {
 	global_stream_lock.lock();
 	std::cout << "[" << __PRETTY_FUNCTION__ << "] " << error
 						<< ": " << error.message() << std::endl;
 	global_stream_lock.unlock();
 
-	if(error != boost::system::errc::operation_canceled
-		&& error != boost::system::errc::success) {
+	if(error != asio::error::operation_aborted
+		&& error) {
 		bouncingBall::BallUpdate bu;
 		bu.set_type(bouncingBall::BallUpdate_Type_DELBALL);
 
 		ballSrv->process(bu,
-			boost::dynamic_pointer_cast<BallConnection>(shared_from_this()));
+			std::dynamic_pointer_cast<BallConnection>(shared_from_this()));
 	}
 }
 
-BallConnection::BallConnection( boost::shared_ptr<BallServer> ballSrv,
-	boost::shared_ptr< Hive > hive )
+BallConnection::BallConnection( std::shared_ptr<BallServer> ballSrv,
+	std::shared_ptr< Hive > hive )
 	: Connection( hive ), ballSrv(ballSrv)
 {
 }
@@ -231,12 +227,12 @@ BallConnection::~BallConnection()
 {
 }
 
-boost::shared_ptr<Connection> BallConnection::NewConnection(){
-	return boost::shared_ptr<BallConnection>(
+std::shared_ptr<Connection> BallConnection::NewConnection(){
+	return std::shared_ptr<BallConnection>(
 		new BallConnection(this->ballSrv,this->GetHive()));
 }
 
-bool BallAcceptor::OnAccept( boost::shared_ptr< Connection > connection,
+bool BallAcceptor::OnAccept( std::shared_ptr< Connection > connection,
 	const std::string & host, uint16_t port )
 {
 	global_stream_lock.lock();
@@ -247,11 +243,11 @@ bool BallAcceptor::OnAccept( boost::shared_ptr< Connection > connection,
 	return true;
 }
 
-void BallAcceptor::OnTimer( const boost::posix_time::time_duration & delta )
+void BallAcceptor::OnTimer( const std::chrono::milliseconds & delta )
 {
 	// global_stream_lock.lock();
 	// std::cout << "[" << __PRETTY_FUNCTION__ << "] " << delta << std::endl;
-	// std::map<boost::shared_ptr<BallConnection>,std::string >
+	// std::map<std::shared_ptr<BallConnection>,std::string >
 	// 	::const_iterator
 	// 	it,end;
 	// end = ballSrv->connToId.end();
@@ -261,14 +257,14 @@ void BallAcceptor::OnTimer( const boost::posix_time::time_duration & delta )
 	// global_stream_lock.unlock();
 }
 
-void BallAcceptor::OnError( const boost::system::error_code & error )
+void BallAcceptor::OnError( const asio::error_code & error )
 {
 	global_stream_lock.lock();
 	std::cout << "[" << __PRETTY_FUNCTION__ << "] " << error << std::endl;
 	global_stream_lock.unlock();
 }
-BallAcceptor::BallAcceptor( boost::shared_ptr<BallServer> ballSrv,
-	boost::shared_ptr< Hive > hive )
+BallAcceptor::BallAcceptor( std::shared_ptr<BallServer> ballSrv,
+	std::shared_ptr< Hive > hive )
 	: Acceptor( hive ), ballSrv(ballSrv)
 {
 }
@@ -279,30 +275,31 @@ BallAcceptor::~BallAcceptor()
 
 int main( int argc, char * argv[] )
 {
-	boost::shared_ptr<BallServer> ballSrv( new BallServer() );
+	std::shared_ptr<BallServer> ballSrv( new BallServer() );
 
-	boost::shared_ptr< Hive > hive( new Hive() );
+	std::shared_ptr< Hive > hive( new Hive() );
 
-	boost::shared_ptr< BallAcceptor > acceptor(
+	std::shared_ptr< BallAcceptor > acceptor(
 		new BallAcceptor( ballSrv, hive ) );
 	acceptor->Listen( "0.0.0.0", 7777 );
 
-	boost::shared_ptr< BallConnection > connection(
+	std::shared_ptr< BallConnection > connection(
 		new BallConnection(ballSrv,hive));
 	acceptor->Accept( connection );
 
-	boost::thread_group worker_threads;
-	worker_threads.create_thread(
-		boost::bind(&WorkerThread, hive));
+	std::thread worker_thread(
+		std::bind(&WorkerThread, hive));
 
 	std::string input;
 	while(input.compare("quit")) {
-		boost::this_thread::sleep(boost::posix_time::milliseconds(1000));
+		std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 		std::cin.clear();
 		std::cin >> input;
 	}
 
 	hive->Stop();
+
+	worker_thread.join();
 
 	return 0;
 }

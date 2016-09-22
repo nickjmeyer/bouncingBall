@@ -1,14 +1,16 @@
 #include "networkWrapper.hpp"
 #include "ball.pb.h"
 #include "ballClient.hpp"
-#include <boost/date_time/posix_time/posix_time.hpp>
-#include <boost/thread/thread.hpp>
-#include <boost/thread/mutex.hpp>
+#include <iostream>
+#include <thread>
+#include <mutex>
 #include <google/protobuf/text_format.h>
 #include <iomanip>
 #include <sstream>
+#include <functional>
+#include <chrono>
 
-boost::mutex global_stream_lock;
+std::mutex global_stream_lock;
 
 const double Ball::scale = 0.75;
 
@@ -36,7 +38,7 @@ std::string Ball::str() const {
 	return ss.str();
 }
 
-void WorkerThread( boost::shared_ptr< Hive > hive)
+void WorkerThread( std::shared_ptr< Hive > hive)
 {
 	global_stream_lock.lock();
 	std::cout << "thread starting" << std::endl;
@@ -50,7 +52,7 @@ BallClient::BallClient()
 }
 
 void BallClient::processUpdate(bouncingBall::BallUpdate bu,
-	boost::shared_ptr<BallConnection> connection) {
+	std::shared_ptr<BallConnection> connection) {
 
 	global_stream_lock.lock();
 	std::cout << "[" << __FUNCTION__ << "]" << std::endl;
@@ -129,7 +131,7 @@ void BallClient::printBalls() {
 }
 
 void BallClient::init(std::string id,
-	boost::shared_ptr<BallConnection> connection) {
+	std::shared_ptr<BallConnection> connection) {
 	this->connection = connection;
 	this->id = id;
 
@@ -226,14 +228,14 @@ void BallConnection::OnRecv( std::vector< uint8_t > & buffer )
 	bouncingBall::BallUpdate bu;
 	bu.ParseFromString(std::string(buffer.begin(),buffer.end()));
 	ballClnt->processUpdate(bu,
-		boost::dynamic_pointer_cast<BallConnection>(shared_from_this()));
+		std::dynamic_pointer_cast<BallConnection>(shared_from_this()));
 
 
 	// Start the next receive
 	Recv();
 }
 
-void BallConnection::OnTimer( const boost::posix_time::time_duration & delta )
+void BallConnection::OnTimer( const std::chrono::milliseconds & delta )
 {
 	// global_stream_lock.lock();
 	// std::cout << "[" << __PRETTY_FUNCTION__ << "] " << delta << std::endl;
@@ -242,7 +244,7 @@ void BallConnection::OnTimer( const boost::posix_time::time_duration & delta )
 	ballClnt->printBalls();
 }
 
-void BallConnection::OnError( const boost::system::error_code & error )
+void BallConnection::OnError( const asio::error_code & error )
 {
 	global_stream_lock.lock();
 	std::cout << "[" << __PRETTY_FUNCTION__ << "] " << error
@@ -250,8 +252,8 @@ void BallConnection::OnError( const boost::system::error_code & error )
 	global_stream_lock.unlock();
 }
 
-BallConnection::BallConnection( boost::shared_ptr<BallClient> ballClnt,
-	boost::shared_ptr< Hive > hive )
+BallConnection::BallConnection( std::shared_ptr<BallClient> ballClnt,
+	std::shared_ptr< Hive > hive )
 	: Connection( hive ), ballClnt(ballClnt)
 {
 }
@@ -260,27 +262,24 @@ BallConnection::~BallConnection()
 {
 }
 
-boost::shared_ptr<Connection> BallConnection::NewConnection () {
-	return boost::shared_ptr<BallConnection>(new BallConnection(
+std::shared_ptr<Connection> BallConnection::NewConnection () {
+	return std::shared_ptr<BallConnection>(new BallConnection(
 			this->ballClnt,this->GetHive()));
 }
 
 int main( int argc, char * argv[] )
 {
 
-	boost::shared_ptr<BallClient> ballClnt( new BallClient() );
+	std::shared_ptr<BallClient> ballClnt( new BallClient() );
 
-	boost::shared_ptr< Hive > hive( new Hive() );
+	std::shared_ptr< Hive > hive( new Hive() );
 
-	boost::shared_ptr< BallConnection > connection(
+	std::shared_ptr< BallConnection > connection(
 		new BallConnection( ballClnt,hive ) );
 	connection->Connect( "localhost", 7777 );
 
-	boost::thread_group worker_threads;
-	worker_threads.create_thread(
-		boost::bind(&WorkerThread, hive));
-
-	// boost::this_thread::sleep(boost::posix_time::milliseconds(5000));
+	std::thread worker_thread(
+		std::bind(&WorkerThread, hive));
 
 	// initialize
 	bouncingBall::BallUpdate bu;
@@ -288,14 +287,16 @@ int main( int argc, char * argv[] )
 	connection->SendUpdate(bu);
 
 	while(!ballClnt->isInit()) {
-		boost::this_thread::sleep(boost::posix_time::milliseconds(100));
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}
 
 	while (ballClnt->pollInput()) {
-		boost::this_thread::sleep(boost::posix_time::milliseconds(100));
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}
 
 	hive->Stop();
+
+	worker_thread.join();
 
 	return 0;
 }
