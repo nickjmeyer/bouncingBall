@@ -23,8 +23,6 @@ asio::io_service & Hive::GetService()
 
 bool Hive::HasStopped()
 {
-	// return ( boost::interprocess::ipcdetail::atomic_cas32( &m_shutdown,
-	// 		1, 1 ) == 1 );
 	return m_shutdown.load() == 1;
 }
 
@@ -239,14 +237,16 @@ void Connection::StartRecv( int32_t total_bytes )
 		asio::async_read( m_socket,
 			asio::buffer(  m_recv_buffer ),
 			m_io_strand.wrap( std::bind(  &Connection::HandleRecv,
-					shared_from_this(), std::placeholders::_1, std::placeholders::_2 ) ) );
+					shared_from_this(), std::placeholders::_1,
+					std::placeholders::_2 ) ) );
 	}
 	else
 	{
 		m_recv_buffer.resize( m_receive_buffer_size );
 		m_socket.async_read_some( asio::buffer( m_recv_buffer ),
 			m_io_strand.wrap( std::bind( &Connection::HandleRecv,
-					shared_from_this(), std::placeholders::_1, std::placeholders::_2 ) ) );
+					shared_from_this(), std::placeholders::_1,
+					std::placeholders::_2 ) ) );
 	}
 }
 
@@ -256,7 +256,8 @@ void Connection::StartTimer()
 	m_timer.expires_from_now(
 		std::chrono::milliseconds( m_timer_interval ) );
 	m_timer.async_wait( m_io_strand.wrap(
-			std::bind( &Connection::DispatchTimer, shared_from_this(), std::placeholders::_1 ) ) );
+			std::bind( &Connection::DispatchTimer, shared_from_this(),
+				std::placeholders::_1 ) ) );
 }
 
 void Connection::StartError( const asio::error_code & error )
@@ -374,7 +375,8 @@ void Connection::Connect( const std::string & host, uint16_t port)
 		std::to_string( port ) );
 	asio::ip::tcp::resolver::iterator iterator = resolver.resolve( query );
 	m_socket.async_connect( *iterator, m_io_strand.wrap( std::bind(
-				&Connection::HandleConnect, shared_from_this(), std::placeholders::_1 ) ) );
+				&Connection::HandleConnect, shared_from_this(),
+					std::placeholders::_1 ) ) );
 	StartTimer();
 }
 
