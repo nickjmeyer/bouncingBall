@@ -6,7 +6,7 @@ protobuf_generate_cpp(PROTO_SRCS PROTO_HDRS ball.proto)
 
 include_directories(${Protobuf_INCLUDE_DIRS})
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
-include_directories(/home/njm/libraries/asio/include)
+include_directories($ENV{HOME}/libraries/asio/include)
 
 # ball binaries
 add_executable(ballServer ballServer.cpp ${PROTO_SRCS} ${PROTO_HDRS})
