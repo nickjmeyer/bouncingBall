@@ -43,9 +43,6 @@ public:
 
 	bool pollInput();
 
-	// void newBall(const std::string id);
-	// void delBall(const std::string id);
-
 private:
 	std::shared_ptr<BallConnection> connection;
 
