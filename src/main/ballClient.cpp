@@ -1,10 +1,9 @@
 #include "networkWrapper.hpp"
-#include "ball.pb.h"
+#include "ball_generated.h"
 #include "ballClient.hpp"
 #include <iostream>
 #include <thread>
 #include <mutex>
-#include <google/protobuf/text_format.h>
 #include <iomanip>
 #include <sstream>
 #include <functional>
@@ -51,38 +50,41 @@ BallClient::BallClient()
 	: isInit_(false) {
 }
 
-void BallClient::processUpdate(bouncingBall::Update bu,
+void BallClient::processUpdate(std::vector<uint8_t> & inBuffer,
 	std::shared_ptr<BallConnection> connection) {
+
+	auto bu = BallUpdate::GetUpdate(inBuffer.data());
 
 	global_stream_lock.lock();
 	std::cout << "[" << __FUNCTION__ << "]" << std::endl;
 	global_stream_lock.unlock();
 
-	if(bu.type() == bouncingBall::UpdateType::INIT) {
-		init(bu.id(),connection);
+	if(bu->type() == BallUpdate::UpdateType::UpdateType_INIT) {
+		init(bu->id()->c_str(),connection);
 		global_stream_lock.lock();
 		std::cout << "[" << __FUNCTION__ << "]"
 							<< ": INIT" << std::endl;
 		global_stream_lock.unlock();
-	} else if(bu.type() == bouncingBall::BallUpdate_Type_BOUNCEBALL) {
-		if(id.compare(bu.id()) && otherBalls.find(bu.id()) != otherBalls.end()) {
-			otherBalls.find(bu.id())->second.bounce();
+	} else if(bu->type() == BallUpdate::UpdateType::UpdateType_BOUNCE) {
+		if(id != bu->id()->c_str()
+			&& otherBalls.find(bu->id()->c_str()) != otherBalls.end()) {
+			otherBalls.find(bu->id()->c_str())->second.bounce();
 		}
 		global_stream_lock.lock();
 		std::cout << "[" << __FUNCTION__ << "]"
 							<< ": BOUNCE" << std::endl;
 		global_stream_lock.unlock();
-	} else if(bu.type() == bouncingBall::BallUpdate_Type_NEWBALL) {
-		if(otherBalls.find(bu.id()) == otherBalls.end()) {
-			otherBalls[bu.id()] = Ball();
+	} else if(bu->type() == BallUpdate::UpdateType::UpdateType_NEWBALL) {
+		if(otherBalls.find(bu->id()->c_str()) == otherBalls.end()) {
+			otherBalls[bu->id()->c_str()] = Ball();
 		}
 		global_stream_lock.lock();
 		std::cout << "[" << __FUNCTION__ << "]"
 							<< ": NEWBALL" << std::endl;
 		global_stream_lock.unlock();
-	} else if(bu.type() == bouncingBall::BallUpdate_Type_DELBALL) {
-		if(otherBalls.find(bu.id()) != otherBalls.end()) {
-			otherBalls.erase(otherBalls.find(bu.id()));
+	} else if(bu->type() == BallUpdate::UpdateType::UpdateType_DELBALL) {
+		if(otherBalls.find(bu->id()->c_str()) != otherBalls.end()) {
+			otherBalls.erase(otherBalls.find(bu->id()->c_str()));
 		}
 		global_stream_lock.lock();
 		std::cout << "[" << __FUNCTION__ << "]"
@@ -96,7 +98,7 @@ bool BallClient::pollInput() {
 	std::cin.clear();
 	std::cin >> input;
 
-	if(!input.compare("quit"))
+	if(input == "quit")
 		return false;
 	else{
 		if(isInit()) {
@@ -104,10 +106,14 @@ bool BallClient::pollInput() {
 			std::cout << "BOUNCE!" << std::endl;
 			global_stream_lock.unlock();
 			this->yourBall.bounce();
-			bouncingBall::BallUpdate bu;
-			bu.set_type(bouncingBall::BallUpdate_Type_BOUNCEBALL);
-			bu.set_id(this->id);
-			connection->SendUpdate(bu);
+			flatbuffers::FlatBufferBuilder builder;
+			auto updateOffset = BallUpdate::CreateUpdate(builder,
+				builder.CreateString(this->id),
+				BallUpdate::UpdateType::UpdateType_BOUNCE);
+			builder.Finish(updateOffset);
+			std::vector<uint8_t> buf(builder.GetBufferPointer(),
+				builder.GetBufferPointer() + builder.GetSize());
+			connection->Send(buf);
 		}
 		return true;
 	}
@@ -142,20 +148,6 @@ bool BallClient::isInit() const {
 	return isInit_;
 }
 
-void BallConnection::SendUpdate( const bouncingBall::BallUpdate & bu)
-{
-	std::string buStr;
-	bu.SerializeToString(&buStr);
-
-	global_stream_lock.lock();
-	std::cout << "[" << __FUNCTION__ << "]"
-						<< bu.has_type() << ", " << bu.type() << std::endl;
-	global_stream_lock.unlock();
-
-	std::vector<uint8_t> buArr(buStr.begin(),buStr.end());
-	Send(buArr);
-}
-
 void BallConnection::OnAccept( const std::string & host, uint16_t port )
 {
 	global_stream_lock.lock();
@@ -183,8 +175,8 @@ void BallConnection::OnConnect( const std::string & host, uint16_t port )
 	// std::copy( str.begin(), str.end(), std::back_inserter( request ) );
 	// Send( request );
 
-	// bouncingBall::BallUpdate bu;
-	// bu.set_type(bouncingBall::BallUpdate_Type_INIT);
+	// BallUpdate::BallUpdate bu;
+	// bu.set_type(BallUpdate::BallUpdate_Type_INIT);
 	// SendUpdate(bu);
 }
 
@@ -225,9 +217,7 @@ void BallConnection::OnRecv( std::vector< uint8_t > & buffer )
 	global_stream_lock.unlock();
 
 
-	bouncingBall::BallUpdate bu;
-	bu.ParseFromString(std::string(buffer.begin(),buffer.end()));
-	ballClnt->processUpdate(bu,
+	ballClnt->processUpdate(buffer,
 		std::dynamic_pointer_cast<BallConnection>(shared_from_this()));
 
 
@@ -282,9 +272,14 @@ int main( int argc, char * argv[] )
 		std::bind(&WorkerThread, hive));
 
 	// initialize
-	bouncingBall::BallUpdate bu;
-	bu.set_type(bouncingBall::BallUpdate_Type_INIT);
-	connection->SendUpdate(bu);
+	flatbuffers::FlatBufferBuilder builder;
+	auto updateBuilder = BallUpdate::UpdateBuilder(builder);
+	updateBuilder.add_type(BallUpdate::UpdateType::UpdateType_INIT);
+	auto updateOffset = updateBuilder.Finish();
+	builder.Finish(updateOffset);
+	std::vector<uint8_t> buf(builder.GetBufferPointer(),
+		builder.GetBufferPointer() + builder.GetSize());
+	connection->Send(buf);
 
 	while(!ballClnt->isInit()) {
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));

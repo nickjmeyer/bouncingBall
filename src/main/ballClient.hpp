@@ -2,9 +2,9 @@
 #define BALL_CLIENT_HPP
 
 #include "networkWrapper.hpp"
-#include "ball.pb.h"
 #include "ball_generated.h"
 #include <queue>
+#include <map>
 
 class Ball;
 class BallClient;
@@ -31,7 +31,7 @@ public:
 
 	BallClient();
 
-	void processUpdate(bouncingBall::BallUpdate bu,
+	void processUpdate(std::vector<uint8_t> & buffer,
 		std::shared_ptr<BallConnection> connection);
 
 	void printBalls();
@@ -81,8 +81,6 @@ public:
 	~BallConnection();
 
 	std::shared_ptr<Connection> NewConnection();
-
-	void SendUpdate(const bouncingBall::BallUpdate & bu);
 };
 
 #endif

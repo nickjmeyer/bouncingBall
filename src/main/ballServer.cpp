@@ -41,16 +41,17 @@ std::string genIdentifier() {
 	return id;
 }
 
-void BallServer::process(const std::vector<uint8_t> & buffer,
+void BallServer::process(const std::vector<uint8_t> & inBuffer,
 	std::shared_ptr<BallConnection> connection) {
 
-	flatbuffers::FlatBufferBuilder b(buffer.size(),buffer.data());
+	auto bu = BallUpdate::GetUpdate(inBuffer.data());
+
 
 	global_stream_lock.lock();
 	std::cout << "[" << __FUNCTION__ << "]" << std::endl;
 	global_stream_lock.unlock();
 
-	if(bu.type() == bouncingBall::UpdateType::UpdateType_INIT) {
+	if(bu->type() == BallUpdate::UpdateType::UpdateType_INIT) {
 		// create id
 		std::string id = genIdentifier();
 		std::cout << "New: " << id << " " << connection << std::endl;
@@ -58,11 +59,14 @@ void BallServer::process(const std::vector<uint8_t> & buffer,
 		// initialize new ball and send INIT
 		{
 			flatbuffers::FlatBufferBuilder builder;
-			auto updateOffset = bouncingBall::CreateUpdate(builder,
-				builder.CreateString(id), bouncingBall::UpdateType::UpdateType_INIT);
+			auto updateOffset = BallUpdate::CreateUpdate(builder,
+				builder.CreateString(id), BallUpdate::UpdateType::UpdateType_INIT);
 			builder.Finish(updateOffset);
 
-			connection->SendUpdate(builder);
+			std::vector<uint8_t> buf(builder.GetBufferPointer(),
+				builder.GetBufferPointer() + builder.GetSize());
+
+			connection->Send(buf);
 		}
 
 		// notify others of the new ball and tell the new ball about existing balls
@@ -75,19 +79,28 @@ void BallServer::process(const std::vector<uint8_t> & buffer,
 		for (it = connToId.begin(); it != end; ++it) {
 			{
 				flatbuffers::FlatBufferBuilder builder;
-				auto updateOffset = bouncingBall::CreateUpdate(builder,
+				auto updateOffset = BallUpdate::CreateUpdate(builder,
 					builder.CreateString(id),
-					bouncingBall::UpdateType::UpdateType_NEWBALL);
+					BallUpdate::UpdateType::UpdateType_NEWBALL);
+				builder.Finish(updateOffset);
 
-				it->first->SendUpdate(builder);
+				std::vector<uint8_t> buf(builder.GetBufferPointer(),
+					builder.GetBufferPointer() + builder.GetSize());
+
+				it->first->Send(buf);
 			}
 
 			{
 				flatbuffers::FlatBufferBuilder builder;
-				auto updateOffset = bouncingBall::CreateUpdate(builder,
+				auto updateOffset = BallUpdate::CreateUpdate(builder,
 					builder.CreateString(it->second),
-					bouncingBall::UpdateType::UpdateType_NEWBALL);
-				connection->SendUpdate(builder);
+					BallUpdate::UpdateType::UpdateType_NEWBALL);
+				builder.Finish(updateOffset);
+
+				std::vector<uint8_t> buf(builder.GetBufferPointer(),
+					builder.GetBufferPointer() + builder.GetSize());
+
+				connection->Send(buf);
 			}
 		}
 
@@ -95,43 +108,36 @@ void BallServer::process(const std::vector<uint8_t> & buffer,
 		connToId[connection] = id;
 		idToConn[id] = connection;
 
-	}	else if(bu.type() == bouncingBall::BallUpdate_Type_BOUNCEBALL) {
+	}	else if(bu->type() == BallUpdate::UpdateType::UpdateType_BOUNCE) {
 		std::map<std::shared_ptr<BallConnection>,std::string >
 			::const_iterator
 			it,end;
 		end = connToId.end();
 		for (it = connToId.begin(); it != end; ++it) {
-			if(it->second.compare(bu.id()))
-				it->first->SendUpdate(bu);
+			if(it->second != bu->id()->c_str())
+				it->first->Send(inBuffer);
 		}
-	} else if(bu.type() == bouncingBall::BallUpdate_Type_DELBALL) {
+	} else if(bu->type() == BallUpdate::UpdateType::UpdateType_DELBALL) {
 		std::string id = connToId.find(connection)->second;
 		connToId.erase(connToId.find(connection));
 		idToConn.erase(idToConn.find(id));
 
-		bouncingBall::BallUpdate bu;
-		bu.set_type(bouncingBall::BallUpdate_Type_DELBALL);
-		bu.set_id(id);
+		flatbuffers::FlatBufferBuilder builder;
+		auto updateOffset = BallUpdate::CreateUpdate(builder,
+			builder.CreateString(id), BallUpdate::UpdateType::UpdateType_DELBALL);
+		builder.Finish(updateOffset);
+		std::vector<uint8_t> buf(builder.GetBufferPointer(),
+			builder.GetBufferPointer() + builder.GetSize());
 
 		std::map<std::shared_ptr<BallConnection>,std::string>
 			::const_iterator
 			it,end;
 		end = connToId.end();
 		for (it = connToId.begin(); it != end; ++it) {
-			it->first->SendUpdate(bu);
+			it->first->Send(buf);
 		}
 	}
 }
-
-void BallConnection::SendUpdate( const bouncingBall::BallUpdate & bu)
-{
-	std::string buStr;
-	bu.SerializeToString(&buStr);
-
-	std::vector<uint8_t> buArr(buStr.begin(),buStr.end());
-	Send(buArr);
-}
-
 
 void BallConnection::OnAccept( const std::string & host, uint16_t port )
 {
@@ -195,12 +201,8 @@ void BallConnection::OnRecv( std::vector< uint8_t > & buffer )
 	// std::cout << std::endl;
 	// global_stream_lock.unlock();
 
-	bouncingBall::BallUpdate bu;
-	bu.ParseFromString(std::string(buffer.begin(),buffer.end()));
-	if(bu.has_type()) {
-		ballSrv->process(bu,
-			std::dynamic_pointer_cast<BallConnection>(shared_from_this()));
-	}
+	ballSrv->process(buffer,
+		std::dynamic_pointer_cast<BallConnection>(shared_from_this()));
 
 	// Start the next receive
 	Recv();
@@ -222,10 +224,16 @@ void BallConnection::OnError( const asio::error_code & error )
 
 	if(error != asio::error::operation_aborted
 		&& error) {
-		bouncingBall::BallUpdate bu;
-		bu.set_type(bouncingBall::BallUpdate_Type_DELBALL);
+		flatbuffers::FlatBufferBuilder builder;
+		// enter blank id, process will add the real id
+		auto updateBuilder = BallUpdate::UpdateBuilder(builder);
+		updateBuilder.add_type(BallUpdate::UpdateType::UpdateType_DELBALL);
+		auto updateOffset = updateBuilder.Finish();
+		builder.Finish(updateOffset);
+		std::vector<uint8_t> buf(builder.GetBufferPointer(),
+			builder.GetBufferPointer() + builder.GetSize());
 
-		ballSrv->process(bu,
+		ballSrv->process(buf,
 			std::dynamic_pointer_cast<BallConnection>(shared_from_this()));
 	}
 }

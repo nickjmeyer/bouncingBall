@@ -55,8 +55,6 @@ public:
 	~BallConnection();
 
 	std::shared_ptr<Connection> NewConnection();
-
-	void SendUpdate(const flatbuffers::FlatBufferBuilder & builder);
 };
 
 class BallAcceptor : public Acceptor
