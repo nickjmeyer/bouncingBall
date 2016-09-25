@@ -51,14 +51,14 @@ BallClient::BallClient()
 	: isInit_(false) {
 }
 
-void BallClient::processUpdate(bouncingBall::BallUpdate bu,
+void BallClient::processUpdate(bouncingBall::Update bu,
 	std::shared_ptr<BallConnection> connection) {
 
 	global_stream_lock.lock();
 	std::cout << "[" << __FUNCTION__ << "]" << std::endl;
 	global_stream_lock.unlock();
 
-	if(bu.type() == bouncingBall::BallUpdate_Type_INIT) {
+	if(bu.type() == bouncingBall::UpdateType::INIT) {
 		init(bu.id(),connection);
 		global_stream_lock.lock();
 		std::cout << "[" << __FUNCTION__ << "]"

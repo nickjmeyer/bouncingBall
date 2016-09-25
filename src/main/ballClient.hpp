@@ -3,6 +3,7 @@
 
 #include "networkWrapper.hpp"
 #include "ball.pb.h"
+#include "ball_generated.h"
 #include <queue>
 
 class Ball;

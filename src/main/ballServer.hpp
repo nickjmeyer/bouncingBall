@@ -2,8 +2,9 @@
 #define BALL_SERVER_HPP
 
 #include "networkWrapper.hpp"
-#include "ball.pb.h"
+#include "ball_generated.h"
 #include <queue>
+#include <map>
 #include <asio/error.hpp>
 
 
@@ -16,7 +17,7 @@ class BallAcceptor;
 
 class BallServer {
 public:
-	void process(const bouncingBall::BallUpdate & bu,
+	void process(const std::vector<uint8_t> & buffer,
 		std::shared_ptr<BallConnection> connection);
 
 // private:
@@ -55,7 +56,7 @@ public:
 
 	std::shared_ptr<Connection> NewConnection();
 
-	void SendUpdate(const bouncingBall::BallUpdate & letter);
+	void SendUpdate(const flatbuffers::FlatBufferBuilder & builder);
 };
 
 class BallAcceptor : public Acceptor

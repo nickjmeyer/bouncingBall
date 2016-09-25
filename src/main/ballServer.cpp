@@ -41,41 +41,54 @@ std::string genIdentifier() {
 	return id;
 }
 
-void BallServer::process(const bouncingBall::BallUpdate & bu,
+void BallServer::process(const std::vector<uint8_t> & buffer,
 	std::shared_ptr<BallConnection> connection) {
+
+	flatbuffers::FlatBufferBuilder b(buffer.size(),buffer.data());
 
 	global_stream_lock.lock();
 	std::cout << "[" << __FUNCTION__ << "]" << std::endl;
 	global_stream_lock.unlock();
 
-	if(bu.type() == bouncingBall::BallUpdate_Type_INIT) {
+	if(bu.type() == bouncingBall::UpdateType::UpdateType_INIT) {
 		// create id
 		std::string id = genIdentifier();
 		std::cout << "New: " << id << " " << connection << std::endl;
 
 		// initialize new ball and send INIT
-		bouncingBall::BallUpdate buInit;
-		buInit.set_type(bouncingBall::BallUpdate_Type_INIT);
-		buInit.set_id(id);
+		{
+			flatbuffers::FlatBufferBuilder builder;
+			auto updateOffset = bouncingBall::CreateUpdate(builder,
+				builder.CreateString(id), bouncingBall::UpdateType::UpdateType_INIT);
+			builder.Finish(updateOffset);
 
-		connection->SendUpdate(buInit);
+			connection->SendUpdate(builder);
+		}
 
 		// notify others of the new ball and tell the new ball about existing balls
-		bouncingBall::BallUpdate buNewBall;
-		buNewBall.set_type(bouncingBall::BallUpdate_Type_NEWBALL);
+
 
 		std::map<std::shared_ptr<BallConnection>,std::string>
 			::const_iterator
 			it,end;
 		end = connToId.end();
 		for (it = connToId.begin(); it != end; ++it) {
-			// send new ball an existing ball
-			buNewBall.set_id(it->second);
-			connection->SendUpdate(buNewBall);
+			{
+				flatbuffers::FlatBufferBuilder builder;
+				auto updateOffset = bouncingBall::CreateUpdate(builder,
+					builder.CreateString(id),
+					bouncingBall::UpdateType::UpdateType_NEWBALL);
 
-			// send existing ball the new ball
-			buNewBall.set_id(id);
-			it->first->SendUpdate(buNewBall);
+				it->first->SendUpdate(builder);
+			}
+
+			{
+				flatbuffers::FlatBufferBuilder builder;
+				auto updateOffset = bouncingBall::CreateUpdate(builder,
+					builder.CreateString(it->second),
+					bouncingBall::UpdateType::UpdateType_NEWBALL);
+				connection->SendUpdate(builder);
+			}
 		}
 
 		// add ball to containers
