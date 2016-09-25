@@ -1,0 +1,8 @@
+namespace bouncingBall;
+
+enum UpdateType : byte { INIT, NEWBALL, DELBALL, TALKING }
+
+table Update {
+			id:string;
+			type:UpdateType;
+}
