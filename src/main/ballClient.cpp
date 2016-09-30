@@ -269,6 +269,14 @@ std::shared_ptr<Connection> BallConnection::NewConnection () {
 
 int main( int argc, char * argv[] )
 {
+	std::string hostname = "localhost";
+	if(argc == 2) {
+		hostname = argv[1];
+	} else if (argc > 2) {
+		std::cout << "Too many command line arguments." << std::endl;
+		return 1;
+	}
+
 
 	std::shared_ptr<BallClient> ballClnt( new BallClient() );
 
@@ -276,7 +284,7 @@ int main( int argc, char * argv[] )
 
 	std::shared_ptr< BallConnection > connection(
 		new BallConnection( ballClnt,hive ) );
-	connection->Connect( "localhost", 7777 );
+	connection->Connect( hostname , 7777 );
 
 	std::thread worker_thread(
 		std::bind(&WorkerThread, hive));
