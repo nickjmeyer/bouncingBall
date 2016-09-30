@@ -14,7 +14,7 @@ std::mutex global_stream_lock;
 
 const double Ball::scale = 0.75;
 
-void Ball::Ball()
+Ball::Ball()
 	: y(0), yVel(0)
 {
 }
