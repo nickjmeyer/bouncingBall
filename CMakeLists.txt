@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.0)
 project(networkWrapper)
 
 set(CMAKE_C_FLAGS "-std=c++11")
