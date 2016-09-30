@@ -14,6 +14,11 @@ std::mutex global_stream_lock;
 
 const double Ball::scale = 0.75;
 
+void Ball::Ball()
+	: y(0), yVel(0)
+{
+}
+
 void Ball::bounce() {
 	this->yVel = 10.0;
 }

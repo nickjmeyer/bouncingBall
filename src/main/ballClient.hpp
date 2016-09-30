@@ -18,6 +18,8 @@ private:
 	const static double scale;
 
 public:
+	Ball();
+
 	void bounce();
 
 	void tick();
